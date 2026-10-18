@@ -1,0 +1,6 @@
+github.com/go-filesystems/interface v0.5.0 h1:AsbSXYG5cp497Ki0Ez88s8wwrVEmeRmFLd40T4d3UwA=
+github.com/go-filesystems/interface v0.5.0/go.mod h1:u9v8mvapNV8djzObwCECdyd2g6JBU6HNTR4EAqxOn6U=
+github.com/go-filesystems/osfs v0.3.0 h1:WvAl3DFnyqrfjymwbzi47rEh4O/t90UO8/tiSIZWcuM=
+github.com/go-filesystems/osfs v0.3.0/go.mod h1:lhNkprdaGU6kbEiipc80mqU2iGs1qfyaD++Hg4Ieol4=
+golang.org/x/sys v0.48.0 h1:bbX/i/6MgT9BVLM9RT1thmxL04yeTAhbEz4SyadbXoo=
+golang.org/x/sys v0.48.0/go.mod h1:hNLxWAXmnKAxqDtdwIYC4bM9oQPEecfsnNMuSxOs3og=

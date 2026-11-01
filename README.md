@@ -57,9 +57,13 @@ Each side treats the other's bytes as hostile.
   ends the connection.
 - **Limits:** a server works on at most 64 requests at once and holds at most
   4096 files per connection.
+- **Sizes and offsets:** a negative offset (READ, WRITE) or truncate size is
+  refused by the server before the driver sees it — an in-memory driver
+  handed a negative size panics slicing with it. The truncate case was added
+  on 2026-11-01; until then only the client refused it.
 
-Each of these is a test. Each was also checked by removing it: ten defences,
-ten tests that fail without them. One of those tests used to pass for the wrong
+Each of these is a test. Each was also checked by removing it: eleven defences,
+eleven tests that fail without them. One of those tests used to pass for the wrong
 reason. It checked only that a 4 GiB frame was refused, without checking *why*:
 the server believed the length, allocated the 4 GiB, and failed later on the
 closed pipe. It now checks the reason.

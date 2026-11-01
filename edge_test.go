@@ -260,6 +260,24 @@ func TestServerRefusesWritesToReadOnly(t *testing.T) {
 	}
 }
 
+// A negative truncate size never reaches the driver, whatever a raw peer
+// sends: the client refuses it before sending, and so does the server.
+func TestServerRefusesANegativeTruncate(t *testing.T) {
+	ffs := &fullFS{}
+	_, l := rawServer(t, ffs)
+	id := l.open(t, "a")
+	e := &enc{}
+	e.u64(id)
+	e.i64(-1)
+	// The fixture's Truncate always fails with errPlain, so "an error came
+	// back" would pass without the check; it must be the server's refusal,
+	// not the driver's.
+	err := l.expectErr(t, opFileTruncate, e.b)
+	if err == nil || !strings.Contains(err.Error(), "malformed") {
+		t.Fatalf("err = %v, want the server's malformed-request refusal before the driver", err)
+	}
+}
+
 // rawLink is a client speaking the wire directly, to send what a well-behaved
 // client never would.
 type rawLink struct {

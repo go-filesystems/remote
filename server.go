@@ -397,6 +397,13 @@ func (s *server) fileOp(op byte, d *dec, e *enc) error {
 		e.u64(0)
 		return nil
 	case opFileTruncate:
+		// Refused here, as a negative offset is for READ and WRITE: a peer
+		// that sends one is not a client this package wrote, and a driver
+		// handed a negative size can panic slicing with it (an in-memory one
+		// does).
+		if n < 0 {
+			return errMalformed
+		}
 		return w.Truncate(n)
 	}
 	return w.Sync()

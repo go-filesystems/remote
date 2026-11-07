@@ -36,7 +36,8 @@ const (
 	opFileTruncate
 	opFileSync
 	opFileClose
-	opLast // not an op: the bound
+	opTimes // appended, not inserted: the codes above keep their numbers
+	opLast  // not an op: the bound
 )
 
 const (

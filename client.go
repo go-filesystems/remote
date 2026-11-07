@@ -47,6 +47,7 @@ var (
 	_ filesystem.Truncater      = (*FS)(nil)
 	_ filesystem.MetadataSetter = (*FS)(nil)
 	_ filesystem.LabelReader    = (*FS)(nil)
+	_ filesystem.TimesReader    = (*FS)(nil)
 )
 
 // New is the filesystem served at the other end of conn. It reads the
@@ -307,6 +308,22 @@ func (f *FS) Chtimes(path string, atime, mtime time.Time) error {
 	e.i64(atime.UnixNano())
 	e.i64(mtime.UnixNano())
 	return f.pathCall(opChtimes, e)
+}
+
+// Times is the server filesystem's times for path, with "not recorded" and the
+// resolution of each carried across as they are. A server whose filesystem has
+// no times answers errors.ErrUnsupported, and so does a server that predates
+// the call; a protocol server treats either as "no times".
+func (f *FS) Times(path string) (filesystem.FileTimes, error) {
+	d, err := f.call(opTimes, pathEnc(path).b)
+	if err != nil {
+		return filesystem.FileTimes{}, err
+	}
+	var ft filesystem.FileTimes
+	for _, dst := range []*filesystem.Timestamp{&ft.Atime, &ft.Mtime, &ft.Ctime, &ft.Btime} {
+		*dst = decodeTimestamp(d)
+	}
+	return ft, d.done()
 }
 
 // OpenFile opens path on the server, which holds it open until Close. The

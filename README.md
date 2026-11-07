@@ -26,9 +26,13 @@ a pipe, a TCP connection. Pure Go, `CGO_ENABLED=0`, every platform Go builds for
 
 - **Every method of `filesystem.Filesystem`**, and of the optional interfaces a
   protocol server looks for: `Opener`, `Symlinker`, `HardLinker`, `Truncater`,
-  `MetadataSetter` and `LabelReader`. The client always has them. Those the
-  server's filesystem lacks answer `errors.ErrUnsupported` (`Label`: `""`), and
-  `Can` says which are really there.
+  `MetadataSetter`, `LabelReader` and `TimesReader`. The client always has
+  them. Those the server's filesystem lacks answer `errors.ErrUnsupported`
+  (`Label`: `""`), and `Can` says which are really there. `Times` carries all
+  four times with "not recorded" and each resolution intact (seconds and
+  nanoseconds, so a 1904 or 2446 date survives); it is a new op appended at
+  the end of the table, so a server that predates it answers an error and the
+  protocol servers fall back to "no times".
 - **Errors keep their meaning.**
   - An errno comes back as itself, so `errors.Is(err, fs.ErrNotExist)` answers
     as it did on the server.

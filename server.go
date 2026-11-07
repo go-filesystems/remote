@@ -212,6 +212,22 @@ func (s *server) dispatch(op byte, d *dec, e *enc) error {
 			return unsupported("label")
 		}
 		e.str(lr.Label())
+	case opTimes:
+		p := d.str()
+		if err := d.done(); err != nil {
+			return err
+		}
+		tr, ok := s.fsys.(filesystem.TimesReader)
+		if !ok {
+			return unsupported("times")
+		}
+		ft, err := tr.Times(p)
+		if err != nil {
+			return err
+		}
+		for _, ts := range []filesystem.Timestamp{ft.Atime, ft.Mtime, ft.Ctime, ft.Btime} {
+			encodeTimestamp(e, ts)
+		}
 	case opSymlink:
 		target, link := d.str(), d.str()
 		if err := d.done(); err != nil {

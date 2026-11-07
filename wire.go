@@ -7,6 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"time"
+
+	filesystem "github.com/go-filesystems/interface"
 )
 
 // The wire format, the same both ways: a frame is
@@ -108,6 +111,39 @@ func (d *dec) int(limit int) int {
 		return 0
 	}
 	return int(v)
+}
+
+// encodeTimestamp writes one filesystem.Timestamp as u64 recorded (0 or 1), i64
+// seconds, u64 nanoseconds and i64 resolution in nanoseconds. Seconds and
+// nanoseconds, not one UnixNano: that overflows outside 1678..2262, and a
+// filesystem time (ext4 reaches 2446, HFS+ starts in 1904) is not bound by it.
+func encodeTimestamp(e *enc, ts filesystem.Timestamp) {
+	t, ok := ts.Get()
+	if !ok {
+		e.u64(0)
+		e.i64(0)
+		e.u64(0)
+		e.i64(0)
+		return
+	}
+	e.u64(1)
+	e.i64(t.Unix())
+	e.u64(uint64(t.Nanosecond()))
+	e.i64(int64(ts.Resolution()))
+}
+
+// decodeTimestamp reads what encodeTimestamp wrote. A flag other than 0 or 1,
+// or nanoseconds of a second or more, is a malformed frame.
+func decodeTimestamp(d *dec) filesystem.Timestamp {
+	rec, sec, nsec, res := d.u64(), d.i64(), d.u64(), d.i64()
+	if rec > 1 || nsec >= 1_000_000_000 {
+		d.fail()
+		return filesystem.Timestamp{}
+	}
+	if rec == 0 {
+		return filesystem.Timestamp{}
+	}
+	return filesystem.NewTimestamp(time.Unix(sec, int64(nsec)), time.Duration(res))
 }
 
 // done is the decoded payload's error, and an error too if anything is left.

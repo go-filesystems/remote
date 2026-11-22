@@ -20,7 +20,11 @@ import (
 // sequence of fields: u64 numbers, and byte strings as u32 length + bytes.
 // Every length is checked against what is left of the frame, and a frame
 // against MaxFrame, before anything is allocated: whatever sends it, the
-// reader allocates no more than one frame's worth.
+// reader allocates no more than one frame's worth. Across requests in flight
+// that is enforced, not assumed: a server takes each request's payload from a
+// budget of MaxFrame bytes before allocating it, and the data of ReadFile
+// replies from a second one of MaxFrame, so a connection holds at most two
+// frames of request and reply data however many requests are in flight.
 
 // MaxFrame bounds one frame: a ReadFile or WriteFile carries the whole file,
 // so this is also the largest file those two move. Larger ones go through

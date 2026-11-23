@@ -128,8 +128,17 @@ func TestPlainFilesystem(t *testing.T) {
 // A file larger than a frame is refused by ReadFile, which says to open it.
 func TestReadFileTooLarge(t *testing.T) {
 	rem := pair(t, plainFS{big: true})
-	if _, err := rem.ReadFile("x"); err == nil || !strings.Contains(err.Error(), "open the file instead") {
-		t.Fatalf("%v", err)
+	// The call runs under a timeout: a server that does not refuse would never
+	// answer, and the test must fail rather than wait for ever.
+	res := make(chan error, 1)
+	go func() { _, err := rem.ReadFile("x"); res <- err }()
+	select {
+	case err := <-res:
+		if err == nil || !strings.Contains(err.Error(), "open the file instead") {
+			t.Fatalf("%v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("ReadFile of a file over the frame limit was not refused")
 	}
 	if err := rem.WriteFile("x", make([]byte, MaxFrame), 0); err == nil || !strings.Contains(err.Error(), "over the limit") {
 		t.Fatalf("a write over a frame: %v", err)

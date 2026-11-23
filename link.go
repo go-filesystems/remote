@@ -54,9 +54,9 @@ func (l *link) recv() (id uint64, code byte, payload []byte, err error) {
 	// reader waits (and the peer with it) instead of retaining 64 frames. The
 	// caller gives them back when it has answered.
 	if l.budget != nil {
-		if err := l.budget.Acquire(context.Background(), int64(n-9)); err != nil {
-			return 0, 0, nil, err
-		}
+		// Acquire fails only for a size over the whole budget (n-9 <= MaxFrame
+		// was checked above and the budget is MaxFrame) or a cancelled context.
+		_ = l.budget.Acquire(context.Background(), int64(n-9))
 	}
 	payload = make([]byte, n-9)
 	if _, err := io.ReadFull(l.rw, payload); err != nil {

@@ -290,6 +290,15 @@ func tooBig(p string, n int64) error {
 	return &fs.PathError{Op: "read", Path: p, Err: fmt.Errorf("remote: %d bytes is over the frame limit; open the file instead", n)}
 }
 
+// holdReply takes size bytes (0 <= size <= maxReadFile) from the budget of
+// reply payloads, waiting until they are free. Acquire fails only for a size
+// over the whole budget or for a cancelled context; the first is excluded by
+// the caller's check against maxReadFile and the second cannot happen with a
+// background context, so there is no error to handle.
+func (s *server) holdReply(size int64) {
+	_ = s.replies.Acquire(context.Background(), size)
+}
+
 // readFile reads a whole file for a ReadFile reply. The size is checked BEFORE
 // anything is read -- an unreadable 1 GiB file costs a Stat, not a gigabyte --
 // and the bytes the reply will hold are taken from the connection's budget
@@ -311,9 +320,7 @@ func (s *server) readFile(p string) ([]byte, error) {
 		if size < 0 {
 			size = 0
 		}
-		if err := s.replies.Acquire(context.Background(), size); err != nil {
-			return nil, err
-		}
+		s.holdReply(size)
 		defer s.replies.Release(size)
 		buf := make([]byte, size)
 		for off := int64(0); off < size; {
@@ -336,13 +343,13 @@ func (s *server) readFile(p string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if size := int64(st.Size()); size > maxReadFile {
+	size := int64(st.Size())
+	if size > maxReadFile {
 		return nil, tooBig(p, size)
-	} else if err := s.replies.Acquire(context.Background(), size); err != nil {
-		return nil, err
-	} else {
-		defer s.replies.Release(size)
 	}
+	size = max(size, 0)
+	s.holdReply(size)
+	defer s.replies.Release(size)
 	b, err := s.fsys.ReadFile(p)
 	if err != nil {
 		return nil, err

@@ -3,6 +3,7 @@
 package remote
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-filesystems/inflight"
 	filesystem "github.com/go-filesystems/interface"
 )
 
@@ -31,7 +33,12 @@ const maxOpen = 4096
 // connection or is refused, and nothing a frame says is allocated before it
 // is checked against the bounds above.
 func Serve(conn io.ReadWriteCloser, fsys filesystem.Filesystem) error {
-	s := &server{l: &link{rw: conn}, fsys: fsys, files: map[uint64]filesystem.File{}}
+	s := &server{
+		l:       &link{rw: conn, budget: inflight.NewBudget(MaxFrame)},
+		fsys:    fsys,
+		files:   map[uint64]filesystem.File{},
+		replies: inflight.NewBudget(MaxFrame),
+	}
 	defer conn.Close()
 	defer s.closeAll()
 	if err := s.l.send(0, opHello, s.hello()); err != nil {
@@ -56,6 +63,7 @@ func Serve(conn io.ReadWriteCloser, fsys filesystem.Filesystem) error {
 		go func() {
 			defer wg.Done()
 			defer func() { <-slots }()
+			defer s.l.budget.Release(int64(len(payload)))
 			status, out := s.handle(op, payload)
 			// A reply that cannot be written ends nothing here: the read
 			// loop sees the broken connection and returns.
@@ -67,6 +75,12 @@ func Serve(conn io.ReadWriteCloser, fsys filesystem.Filesystem) error {
 type server struct {
 	l    *link
 	fsys filesystem.Filesystem
+
+	// replies bounds the file data held for ReadFile replies at once. It is a
+	// budget apart from the request one (l.budget): a ReadFile holds its small
+	// request while it waits here, and waiting on the same budget could
+	// deadlock two of them against each other.
+	replies *inflight.Budget
 
 	mu     sync.Mutex
 	files  map[uint64]filesystem.File
@@ -133,12 +147,9 @@ func (s *server) dispatch(op byte, d *dec, e *enc) error {
 		if err := d.done(); err != nil {
 			return err
 		}
-		b, err := s.fsys.ReadFile(p)
+		b, err := s.readFile(p)
 		if err != nil {
 			return err
-		}
-		if len(b) > MaxFrame-8 {
-			return &fs.PathError{Op: "read", Path: p, Err: fmt.Errorf("remote: %d bytes is over the frame limit; open the file instead", len(b))}
 		}
 		e.bytes(b)
 	case opListDir:
@@ -270,6 +281,83 @@ func (s *server) dispatch(op byte, d *dec, e *enc) error {
 		return s.fileOp(op, d, e)
 	}
 	return nil
+}
+
+// maxReadFile is the largest file one ReadFile reply can carry.
+const maxReadFile = MaxFrame - 8
+
+func tooBig(p string, n int64) error {
+	return &fs.PathError{Op: "read", Path: p, Err: fmt.Errorf("remote: %d bytes is over the frame limit; open the file instead", n)}
+}
+
+// holdReply takes size bytes (0 <= size <= maxReadFile) from the budget of
+// reply payloads, waiting until they are free. Acquire fails only for a size
+// over the whole budget or for a cancelled context; the first is excluded by
+// the caller's check against maxReadFile and the second cannot happen with a
+// background context, so there is no error to handle.
+func (s *server) holdReply(size int64) {
+	_ = s.replies.Acquire(context.Background(), size)
+}
+
+// readFile reads a whole file for a ReadFile reply. The size is checked BEFORE
+// anything is read -- an unreadable 1 GiB file costs a Stat, not a gigabyte --
+// and the bytes the reply will hold are taken from the connection's budget
+// before they are allocated. A driver that opens files is read through the open
+// file in pieces of maxChunk, into a buffer of exactly the size announced;
+// otherwise the size comes from Stat, and the length of what ReadFile returned
+// is checked again, since Stat can be stale.
+func (s *server) readFile(p string) ([]byte, error) {
+	if o, ok := s.fsys.(filesystem.Opener); ok {
+		f, err := o.OpenFile(p)
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		size := f.Size()
+		if size > maxReadFile {
+			return nil, tooBig(p, size)
+		}
+		if size < 0 {
+			size = 0
+		}
+		s.holdReply(size)
+		defer s.replies.Release(size)
+		buf := make([]byte, size)
+		for off := int64(0); off < size; {
+			end := min(off+maxChunk, size)
+			n, err := f.ReadAt(buf[off:end], off)
+			off += int64(n)
+			if err != nil && !(errors.Is(err, io.EOF) && off == size) {
+				if errors.Is(err, io.EOF) {
+					return buf[:off], nil // the file shrank under us
+				}
+				return nil, err
+			}
+			if n == 0 && err == nil {
+				return nil, io.ErrNoProgress
+			}
+		}
+		return buf, nil
+	}
+	st, err := s.fsys.Stat(p)
+	if err != nil {
+		return nil, err
+	}
+	size := int64(st.Size())
+	if size > maxReadFile {
+		return nil, tooBig(p, size)
+	}
+	size = max(size, 0)
+	s.holdReply(size)
+	defer s.replies.Release(size)
+	b, err := s.fsys.ReadFile(p)
+	if err != nil {
+		return nil, err
+	}
+	if len(b) > maxReadFile {
+		return nil, tooBig(p, int64(len(b)))
+	}
+	return b, nil
 }
 
 func (s *server) metadata(op byte, d *dec) error {

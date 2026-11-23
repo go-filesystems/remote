@@ -56,7 +56,11 @@ Each side treats the other's bytes as hostile.
 
 - **Frames:** a frame is at most `MaxFrame` (32 MiB). Its length is checked
   before anything is allocated for it, and every string and count inside it is
-  checked against what is left.
+  checked against what is left. The payloads of all requests in flight on one
+  connection share a budget of `MaxFrame` bytes, taken before they are
+  allocated (inflight `Budget`): a peer cannot make a server hold 64 frames.
+- **ReadFile:** the size of the file is checked against the frame limit
+  before any of it is read.
 - **Unknown ops and replies:** an unknown op, or a reply to a call never made,
   ends the connection.
 - **Limits:** a server works on at most 64 requests at once and holds at most

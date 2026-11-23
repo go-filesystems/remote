@@ -29,6 +29,7 @@ module github.com/go-filesystems/remote
 go 1.27.4
 
 require (
+	github.com/go-filesystems/inflight v0.7.0
 	github.com/go-filesystems/interface v0.6.0
 	github.com/go-filesystems/osfs v0.4.0
 )

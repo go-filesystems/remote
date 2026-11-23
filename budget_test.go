@@ -167,6 +167,9 @@ func TestReadFileLengthChecked(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := budgetDial(t, liar{plain{inner}, MaxFrame})
+	// A server that sent the oversized reply (or none) must fail this test at
+	// once, not after budgetDial's long deadline.
+	p.c.SetDeadline(time.Now().Add(5 * time.Second))
 	if st, _ := p.call(opReadFile, readFileReq("/x")); st != statusErr {
 		t.Fatalf("a reply over the frame limit: status %d", st)
 	}

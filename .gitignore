@@ -2,3 +2,5 @@
 *.out
 cov.out
 coverage.txt
+# mutsweep temp copies, left when a sweep is interrupted
+.*.atomicwrite-*
